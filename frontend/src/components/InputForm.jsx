@@ -33,7 +33,7 @@ function InputForm({ onSolarPrediction }) {
 
     try {
       const response = await fetch(
-        "https://urban-solar-project.onrender.com",
+        "https://urban-solar-project.onrender.com/predict-solar ",
         {
           method: "POST",
           headers: {
