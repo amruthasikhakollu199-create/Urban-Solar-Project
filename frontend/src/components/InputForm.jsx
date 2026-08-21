@@ -1,15 +1,14 @@
 import { useState } from "react";
 import PredictionResult from "./PredictionResult";
 
-function InputForm() {
+function InputForm({ onSolarPrediction }) {
   const [formData, setFormData] = useState({
-    date: "",
-    time: "",
-    solarPower: "",
-    loadLag1: "",
-    loadLag24: "",
-    rollingMean3: "",
-    rollingMean24: "",
+    temperature: "",
+    humidity: "",
+    cloud_cover: "",
+    shortwave_radiation: "",
+    zenith: "",
+    angle_of_incidence: "",
   });
 
   const [prediction, setPrediction] = useState(null);
@@ -34,48 +33,53 @@ function InputForm() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/predict",
+        "http://127.0.0.1:8000/predict-solar",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            date: formData.date,
-            time: formData.time,
-
-            solarPower: Number(formData.solarPower),
-
-            loadLag1: Number(formData.loadLag1),
-
-            loadLag24: Number(formData.loadLag24),
-
-            rollingMean3: Number(formData.rollingMean3),
-
-            rollingMean24: Number(formData.rollingMean24),
+            temperature: Number(formData.temperature),
+            humidity: Number(formData.humidity),
+            cloud_cover: Number(formData.cloud_cover),
+            shortwave_radiation: Number(
+              formData.shortwave_radiation
+            ),
+            zenith: Number(formData.zenith),
+            angle_of_incidence: Number(
+              formData.angle_of_incidence
+            ),
           }),
         }
       );
 
       if (!response.ok) {
-        throw new Error("Prediction request failed");
+        throw new Error("Solar prediction request failed");
       }
 
       const data = await response.json();
 
+      const predictedPower = Number(
+        data.predicted_solar_power
+      );
+
       setPrediction(
-        Number(data.predicted_demand).toLocaleString("en-IN", {
+        predictedPower.toLocaleString("en-IN", {
           maximumFractionDigits: 2,
         })
       );
 
+      if (onSolarPrediction) {
+        onSolarPrediction(predictedPower);
+      }
+
     } catch (error) {
-      console.error("Prediction error:", error);
+      console.error("Solar prediction error:", error);
 
       setError(
-        "Unable to get prediction. Please make sure the backend is running."
+        "Unable to get solar prediction. Please make sure the backend is running."
       );
-
     } finally {
       setLoading(false);
     }
@@ -88,45 +92,59 @@ function InputForm() {
 
         <div className="input-grid">
 
-          {/* DATE */}
-
           <div className="input-group">
-            <label>Date</label>
-
-            <input
-              type="date"
-              name="date"
-              value={formData.date}
-              onChange={handleChange}
-              required
-            />
-          </div>
-
-
-          {/* TIME */}
-
-          <div className="input-group">
-            <label>Time</label>
-
-            <input
-              type="time"
-              name="time"
-              value={formData.time}
-              onChange={handleChange}
-              required
-            />
-          </div>
-
-
-          {/* SOLAR POWER */}
-
-          <div className="input-group">
-            <label>Solar AC Power</label>
+            <label>Temperature</label>
 
             <input
               type="number"
-              name="solarPower"
-              value={formData.solarPower}
+              name="temperature"
+              value={formData.temperature}
+              onChange={handleChange}
+              placeholder="Example: 25"
+              step="any"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label>Relative Humidity</label>
+
+            <input
+              type="number"
+              name="humidity"
+              value={formData.humidity}
+              onChange={handleChange}
+              placeholder="Example: 50"
+              min="0"
+              max="100"
+              step="any"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label>Total Cloud Cover</label>
+
+            <input
+              type="number"
+              name="cloud_cover"
+              value={formData.cloud_cover}
+              onChange={handleChange}
+              placeholder="Example: 20"
+              min="0"
+              max="100"
+              step="any"
+              required
+            />
+          </div>
+
+          <div className="input-group">
+            <label>Shortwave Radiation</label>
+
+            <input
+              type="number"
+              name="shortwave_radiation"
+              value={formData.shortwave_radiation}
               onChange={handleChange}
               placeholder="Example: 500"
               min="0"
@@ -135,73 +153,33 @@ function InputForm() {
             />
           </div>
 
-
-          {/* PREVIOUS HOUR */}
-
           <div className="input-group">
-            <label>Previous Hour Demand</label>
+            <label>Zenith</label>
 
             <input
               type="number"
-              name="loadLag1"
-              value={formData.loadLag1}
+              name="zenith"
+              value={formData.zenith}
               onChange={handleChange}
-              placeholder="Example: 150000"
+              placeholder="Example: 40"
               min="0"
+              max="180"
               step="any"
               required
             />
           </div>
 
-
-          {/* PREVIOUS DAY */}
-
           <div className="input-group">
-            <label>Previous Day Same-Hour Demand</label>
+            <label>Angle of Incidence</label>
 
             <input
               type="number"
-              name="loadLag24"
-              value={formData.loadLag24}
+              name="angle_of_incidence"
+              value={formData.angle_of_incidence}
               onChange={handleChange}
-              placeholder="Example: 153000"
+              placeholder="Example: 35"
               min="0"
-              step="any"
-              required
-            />
-          </div>
-
-
-          {/* 3 HOUR AVERAGE */}
-
-          <div className="input-group">
-            <label>Previous 3-Hour Average</label>
-
-            <input
-              type="number"
-              name="rollingMean3"
-              value={formData.rollingMean3}
-              onChange={handleChange}
-              placeholder="Example: 152000"
-              min="0"
-              step="any"
-              required
-            />
-          </div>
-
-
-          {/* 24 HOUR AVERAGE */}
-
-          <div className="input-group">
-            <label>Previous 24-Hour Average</label>
-
-            <input
-              type="number"
-              name="rollingMean24"
-              value={formData.rollingMean24}
-              onChange={handleChange}
-              placeholder="Example: 145500"
-              min="0"
+              max="180"
               step="any"
               required
             />
@@ -209,21 +187,17 @@ function InputForm() {
 
         </div>
 
-
-        {/* PREDICT BUTTON */}
-
         <button
           type="submit"
           className="predict-button"
           disabled={loading}
         >
-          {loading ? "Predicting..." : "Predict Grid Demand"}
+          {loading
+            ? "Predicting..."
+            : "Predict Solar Power"}
         </button>
 
       </form>
-
-
-      {/* ERROR MESSAGE */}
 
       {error && (
         <div className="error-message">
@@ -231,14 +205,9 @@ function InputForm() {
         </div>
       )}
 
-
-      {/* PREDICTION RESULT */}
-
       {prediction && (
         <PredictionResult
           prediction={prediction}
-          date={formData.date}
-          time={formData.time}
         />
       )}
 

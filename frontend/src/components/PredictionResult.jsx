@@ -1,14 +1,10 @@
-function PredictionResult({ prediction, date, time }) {
+function PredictionResult({ prediction }) {
   return (
     <div className="prediction-result">
 
-      <p>Predicted Grid Demand</p>
+      <p>Predicted Solar AC Power</p>
 
-      <h2>{prediction}</h2>
-
-      <span>
-        For {date} at {time}
-      </span>
+      <h2>{prediction} kW</h2>
 
     </div>
   );

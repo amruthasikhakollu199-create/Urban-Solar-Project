@@ -11,7 +11,10 @@ app = FastAPI(
 )
 
 
-# Allow React frontend to communicate with FastAPI
+# ============================================================
+# CORS
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,8 +24,16 @@ app.add_middleware(
 )
 
 
-# Find the trained model
+# ============================================================
+# PATHS
+# ============================================================
+
 BASE_DIR = Path(__file__).resolve().parent
+
+
+# ============================================================
+# GRID LOAD MODEL
+# ============================================================
 
 MODEL_PATH = (
     BASE_DIR
@@ -33,10 +44,28 @@ MODEL_PATH = (
     / "gradient_boosting.pkl"
 ).resolve()
 
-
-# Load trained Gradient Boosting model
 model = joblib.load(MODEL_PATH)
 
+
+# ============================================================
+# SOLAR POWER MODEL
+# ============================================================
+
+SOLAR_MODEL_PATH = (
+    BASE_DIR
+    / ".."
+    / "data_preprocessing"
+    / "modeling"
+    / "models"
+    / "solar_model.pkl"
+).resolve()
+
+solar_model = joblib.load(SOLAR_MODEL_PATH)
+
+
+# ============================================================
+# GRID LOAD REQUEST
+# ============================================================
 
 class PredictionRequest(BaseModel):
     date: str
@@ -48,12 +77,33 @@ class PredictionRequest(BaseModel):
     rollingMean24: float
 
 
+# ============================================================
+# SOLAR POWER REQUEST
+# ============================================================
+
+class SolarPredictionRequest(BaseModel):
+    temperature: float
+    humidity: float
+    cloud_cover: float
+    shortwave_radiation: float
+    zenith: float
+    angle_of_incidence: float
+
+
+# ============================================================
+# ROOT
+# ============================================================
+
 @app.get("/")
 def root():
     return {
         "message": "Urban Solar Grid Load Forecasting API is running"
     }
 
+
+# ============================================================
+# GRID LOAD PREDICTION
+# ============================================================
 
 @app.post("/predict")
 def predict(data: PredictionRequest):
@@ -70,7 +120,8 @@ def predict(data: PredictionRequest):
     day_of_month = date_time.day
     month = date_time.month
 
-    # Features must be in EXACT same order used during training
+    # Features must be in EXACT same order
+    # used during Grid model training
     features = [[
         hour,
         day_of_week,
@@ -89,4 +140,30 @@ def predict(data: PredictionRequest):
         "predicted_demand": round(float(prediction), 2),
         "date": data.date,
         "time": data.time
+    }
+
+
+# ============================================================
+# SOLAR POWER PREDICTION
+# ============================================================
+
+@app.post("/predict-solar")
+def predict_solar(data: SolarPredictionRequest):
+
+    # Features must be in EXACT same order
+    # used during 6-feature Solar model training
+
+    features = [[
+        data.temperature,
+        data.humidity,
+        data.cloud_cover,
+        data.shortwave_radiation,
+        data.zenith,
+        data.angle_of_incidence
+    ]]
+
+    prediction = solar_model.predict(features)[0]
+
+    return {
+        "predicted_solar_power": round(float(prediction), 2)
     }
