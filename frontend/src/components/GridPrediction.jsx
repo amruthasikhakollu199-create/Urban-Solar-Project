@@ -1,12 +1,20 @@
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabaseClient";
 
 function GridPrediction({ solarPower }) {
+  const { user } = useAuth();
+
   const [consumption, setConsumption] = useState("");
   const [period, setPeriod] = useState("10");
   const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handlePredict = (event) => {
+  const handlePredict = async (event) => {
     event.preventDefault();
+
+    if (loading) return;
 
     const solar = Number(solarPower);
     const consumed = Number(consumption);
@@ -16,22 +24,75 @@ function GridPrediction({ solarPower }) {
       return;
     }
 
-    // Difference between generation and consumption
-    const powerBalance = solar - consumed;
+    setLoading(true);
+    setError("");
 
-    // Energy balance for selected number of days
-    // 24 hours per day
-    const energyBalance =
-      powerBalance * 24 * days;
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-    setResult({
-      solar,
-      consumed,
-      days,
-      powerBalance,
-      energyBalance,
-    });
+      const payload = {
+        solar_power: solar,
+        consumption: consumed,
+        forecast_period: days,
+        user_id: user?.id,
+      };
+
+      const headers = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      let response;
+      try {
+        response = await fetch(`${apiUrl}/predict-grid`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      } catch (backendErr) {
+        console.warn("Primary API URL failed, falling back to hosted endpoint:", backendErr);
+        response = await fetch("https://urban-solar-project.onrender.com/predict-grid", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error("Grid prediction request failed");
+      }
+
+      const data = await response.json();
+
+      setResult({
+        solar: Number(data.solar),
+        consumed: Number(data.consumed),
+        days: Number(data.days),
+        powerBalance: Number(data.powerBalance),
+        energyBalance: Number(data.energyBalance),
+      });
+    } catch (err) {
+      console.error("Grid prediction error:", err);
+
+      // Offline fallback calculation for UI display if network fails
+      const powerBalance = roundValue(solar - consumed);
+      const energyBalance = roundValue(powerBalance * 24 * days);
+      setResult({
+        solar,
+        consumed,
+        days,
+        powerBalance,
+        energyBalance,
+      });
+      setError("Unable to reach forecasting server. Calculation displayed in offline mode.");
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const roundValue = (val) => Math.round(val * 100) / 100;
 
   return (
     <div className="form-card">
@@ -105,11 +166,21 @@ function GridPrediction({ solarPower }) {
         <button
           type="submit"
           className="predict-button"
+          disabled={loading}
         >
-          Predict Power Requirement
+          {loading ? "Calculating..." : "Predict Power Requirement"}
         </button>
 
       </form>
+
+
+      {/* ERROR */}
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
 
 
       {/* RESULT */}

@@ -62,11 +62,6 @@ function CoverPage({ onTitleClick }) {
         <p className="landing-subtitle">
           Solar intelligence for a smarter urban grid
         </p>
-
-        <div className="click-hint">
-          <span>Click the title to explore</span>
-          <span className="hint-arrow">↓</span>
-        </div>
       </div>
     </div>
   );

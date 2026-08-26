@@ -1,14 +1,26 @@
 import { useState, useEffect } from "react";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import CoverPage from "./components/CoverPage";
 import HomePage from "./components/HomePage";
 import Dashboard from "./components/Dashboard";
 import InputForm from "./components/InputForm";
 import GridPrediction from "./components/GridPrediction";
+import PredictionHistory from "./components/PredictionHistory";
+import LoginPage from "./components/LoginPage";
+import SignupPage from "./components/SignupPage";
 
-function App() {
+// ─── Inner app — needs access to the auth context ───────────────────────────
+
+function AppInner() {
+  const { user, loading, signOut } = useAuth();
+
+  // "auth" pages: "login" | "signup"
+  // App pages: "cover" | "home" | "dashboard" | "solar" | "grid" | "history"
   const [currentPage, setCurrentPage] = useState("cover");
+  const [authPage, setAuthPage] = useState("login"); // which auth screen to show
   const [solarPower, setSolarPower] = useState(null);
 
+  // ── Browser history (existing logic, untouched) ──────────────────────────
   useEffect(() => {
     window.history.replaceState({ page: "cover" }, "");
     window.history.pushState({ page: "cover" }, "");
@@ -34,51 +46,145 @@ function App() {
     window.history.pushState({ page }, "");
   };
 
+  // ── Auth handlers ─────────────────────────────────────────────────────────
+  const handleLoginSuccess = () => {
+    navigateTo("dashboard");
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigateTo("cover");
+  };
+
+  // ── Loading state ─────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: "100vh",
+          background: "#f8faf6",
+          color: "#2f6339",
+          fontFamily: "Inter, sans-serif",
+          fontSize: "18px",
+          gap: "12px",
+        }}
+      >
+        <span style={{ fontSize: "28px", animation: "floatArrow 1.8s ease-in-out infinite" }}>☀️</span>
+        Loading…
+      </div>
+    );
+  }
+
+  // ── Protected route guard ─────────────────────────────────────────────────
+  // Pages that require authentication
+  const protectedPages = ["dashboard", "solar", "grid", "history"];
+  if (!user && protectedPages.includes(currentPage)) {
+    // Redirect to login if trying to access a protected page without auth
+    return authPage === "signup" ? (
+      <SignupPage
+        onSignupSuccess={() => setAuthPage("login")}
+        onGoToLogin={() => setAuthPage("login")}
+      />
+    ) : (
+      <LoginPage
+        onLoginSuccess={handleLoginSuccess}
+        onGoToSignup={() => setAuthPage("signup")}
+      />
+    );
+  }
+
+  // ── Cover page — always accessible, no auth needed ────────────────────────
+  if (currentPage === "cover") {
+    return (
+      <CoverPage onTitleClick={() => navigateTo("home")} />
+    );
+  }
+
+  // ── Home page — always accessible ────────────────────────────────────────
+  if (currentPage === "home" || currentPage === "landing") {
+    return (
+      <HomePage onExplore={() => navigateTo("dashboard")} />
+    );
+  }
+
+  // ── Auth pages (when not logged in) ──────────────────────────────────────
+  if (!user) {
+    if (authPage === "signup") {
+      return (
+        <SignupPage
+          onSignupSuccess={() => setAuthPage("login")}
+          onGoToLogin={() => setAuthPage("login")}
+        />
+      );
+    }
+    return (
+      <LoginPage
+        onLoginSuccess={handleLoginSuccess}
+        onGoToSignup={() => setAuthPage("signup")}
+      />
+    );
+  }
+
+  // ── Authenticated pages ───────────────────────────────────────────────────
+  if (currentPage === "dashboard") {
+    return (
+      <Dashboard
+        onSolarSelect={() => navigateTo("solar")}
+        onHistorySelect={() => navigateTo("history")}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  if (currentPage === "history") {
+    return (
+      <PredictionHistory
+        onBackToDashboard={() => navigateTo("dashboard")}
+      />
+    );
+  }
+
+  if (currentPage === "solar") {
+    return (
+      <div className="dashboard">
+        <header>
+          <h2>☀️ Solar Power Prediction</h2>
+          <p>Predict solar AC power using environmental conditions.</p>
+        </header>
+
+        <InputForm
+          onSolarPrediction={(power) => {
+            setSolarPower(power);
+            navigateTo("grid");
+          }}
+        />
+      </div>
+    );
+  }
+
+  // currentPage === "grid"
   return (
-    <>
-      {currentPage === "cover" ? (
-        <CoverPage
-          onTitleClick={() => navigateTo("home")}
-        />
-      ) : currentPage === "home" || currentPage === "landing" ? (
-        <HomePage
-          onExplore={() => navigateTo("dashboard")}
-        />
-      ) : currentPage === "dashboard" ? (
-        <Dashboard
-          onSolarSelect={() => navigateTo("solar")}
-        />
-      ) : currentPage === "solar" ? (
-        <div className="dashboard">
-          <header>
-            <h2>☀️ Solar Power Prediction</h2>
+    <div className="dashboard">
+      <header>
+        <h2>⚡ Grid Load Prediction</h2>
+        <p>Compare solar generation with your power consumption.</p>
+      </header>
 
-            <p>
-              Predict solar AC power using environmental conditions.
-            </p>
-          </header>
+      <GridPrediction solarPower={solarPower} />
+    </div>
+  );
+}
 
-          <InputForm
-            onSolarPrediction={(power) => {
-              setSolarPower(power);
-              navigateTo("grid");
-            }}
-          />
-        </div>
-      ) : (
-        <div className="dashboard">
-          <header>
-            <h2>⚡ Grid Load Prediction</h2>
+// ─── Root — wraps everything in AuthProvider ─────────────────────────────────
 
-            <p>
-              Compare solar generation with your power consumption.
-            </p>
-          </header>
-
-          <GridPrediction solarPower={solarPower} />
-        </div>
-      )}
-    </>
+function App() {
+  return (
+    <AuthProvider>
+      <AppInner />
+    </AuthProvider>
   );
 }
 

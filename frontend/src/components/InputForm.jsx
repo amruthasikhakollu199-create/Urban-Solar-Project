@@ -1,7 +1,11 @@
 import { useState } from "react";
+import { useAuth } from "../context/AuthContext";
+import { supabase } from "../lib/supabaseClient";
 import PredictionResult from "./PredictionResult";
 
 function InputForm({ onSolarPrediction }) {
+  const { user } = useAuth();
+
   const [formData, setFormData] = useState({
     temperature: "",
     humidity: "",
@@ -27,42 +31,61 @@ function InputForm({ onSolarPrediction }) {
   const handlePredict = async (event) => {
     event.preventDefault();
 
+    if (loading) return;
+
     setLoading(true);
     setError("");
     setPrediction(null);
 
+    const temp = Number(formData.temperature);
+    const hum = Number(formData.humidity);
+    const cloud = Number(formData.cloud_cover);
+    const rad = Number(formData.shortwave_radiation);
+    const zen = Number(formData.zenith);
+    const angle = Number(formData.angle_of_incidence);
+
     try {
-      const response = await fetch(
-        "https://urban-solar-project.onrender.com/predict-solar ",
-        {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const apiUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+      const payload = {
+        temperature: temp,
+        humidity: hum,
+        cloud_cover: cloud,
+        shortwave_radiation: rad,
+        zenith: zen,
+        angle_of_incidence: angle,
+        user_id: user?.id,
+      };
+
+      const headers = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      let response;
+      try {
+        response = await fetch(`${apiUrl}/predict-solar`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            temperature: Number(formData.temperature),
-            humidity: Number(formData.humidity),
-            cloud_cover: Number(formData.cloud_cover),
-            shortwave_radiation: Number(
-              formData.shortwave_radiation
-            ),
-            zenith: Number(formData.zenith),
-            angle_of_incidence: Number(
-              formData.angle_of_incidence
-            ),
-          }),
-        }
-      );
+          headers,
+          body: JSON.stringify(payload),
+        });
+      } catch (fetchErr) {
+        console.warn("Primary API URL failed, falling back to hosted endpoint:", fetchErr);
+        response = await fetch("https://urban-solar-project.onrender.com/predict-solar", {
+          method: "POST",
+          headers,
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!response.ok) {
         throw new Error("Solar prediction request failed");
       }
 
       const data = await response.json();
-
-      const predictedPower = Number(
-        data.predicted_solar_power
-      );
+      const predictedPower = Number(data.predicted_solar_power);
 
       setPrediction(
         predictedPower.toLocaleString("en-IN", {
@@ -70,6 +93,7 @@ function InputForm({ onSolarPrediction }) {
         })
       );
 
+      // Trigger callback if provided
       if (onSolarPrediction) {
         onSolarPrediction(predictedPower);
       }
