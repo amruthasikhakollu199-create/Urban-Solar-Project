@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
@@ -290,4 +290,161 @@ def predict_grid(data: GridPredictionRequest, authorization: Optional[str] = Hea
         "days": days,
         "powerBalance": power_balance,
         "energyBalance": energy_balance
+    }
+
+
+# ============================================================
+# ACCOUNT MANAGEMENT (Secure User & Data Deletion)
+# ============================================================
+
+@app.delete("/auth/delete-account")
+@app.post("/auth/delete-account")
+def delete_account(authorization: Optional[str] = Header(None)):
+    """
+    Securely deletes the authenticated user from Supabase Auth and removes
+    their associated data (power_plants, solar_predictions, grid_predictions).
+
+    Security:
+    - Requires Bearer JWT token from the logged-in user.
+    - Token is verified against Supabase Auth.
+    - Only the user identified by the token is deleted.
+    - Admin deletion is executed server-side using the SUPABASE_SERVICE_ROLE_KEY.
+    - No service_role key is ever exposed to the client.
+    """
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header is required."
+        )
+
+    token = authorization.replace("Bearer ", "").strip()
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer token is missing."
+        )
+
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    anon_key = (
+        os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("VITE_SUPABASE_ANON_KEY")
+        or os.getenv("SUPABASE_KEY")
+    )
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
+
+    if not supabase_url:
+        logger.error("Supabase URL is not configured on the backend.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database service URL is not configured on the server."
+        )
+
+    # 1. Verify user identity with Supabase Auth
+    verify_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/user"
+    verify_headers = {
+        "apikey": anon_key or service_key,
+        "Authorization": f"Bearer {token}"
+    }
+
+    try:
+        verify_res = requests.get(verify_endpoint, headers=verify_headers, timeout=10)
+    except Exception as exc:
+        logger.error(f"Error connecting to Supabase for token verification: {exc}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not connect to authentication service."
+        )
+
+    if verify_res.status_code != 200:
+        logger.warning(f"Unauthorized delete attempt: status {verify_res.status_code}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired session. Please sign in again."
+        )
+
+    user_data = verify_res.json()
+    user_id = user_data.get("id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not determine user identity from session."
+        )
+
+    logger.info(f"Verified user {user_id} requested account deletion.")
+
+    # 2. Explicitly remove user data from tables (solar_predictions, grid_predictions, power_plants)
+    db_headers = {
+        "apikey": service_key or anon_key,
+        "Authorization": f"Bearer {service_key or token}",
+        "Content-Type": "application/json"
+    }
+
+    for table in ["solar_predictions", "grid_predictions", "power_plants"]:
+        try:
+            del_endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table}?user_id=eq.{user_id}"
+            res = requests.delete(del_endpoint, headers=db_headers, timeout=10)
+            if res.status_code in (200, 204):
+                logger.info(f"Cleaned up records from '{table}' for user {user_id}.")
+            else:
+                logger.debug(f"Table cleanup for '{table}' returned status {res.status_code}")
+        except Exception as exc:
+            logger.warning(f"Notice while cleaning table '{table}': {exc}")
+
+    # 3. Permanently delete user from Supabase Auth admin API if service_key available
+    if service_key:
+        admin_endpoint = f"{supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}"
+        admin_headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}"
+        }
+        try:
+            admin_res = requests.delete(admin_endpoint, headers=admin_headers, timeout=10)
+            if admin_res.status_code not in (200, 204):
+                logger.error(
+                    f"Supabase Admin API user deletion failed: {admin_res.status_code} - {admin_res.text}"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to permanently delete user from authentication provider."
+                )
+            logger.info(f"Successfully deleted user {user_id} from Supabase Auth.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error(f"Exception calling Supabase admin delete: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred while deleting the account."
+            )
+    else:
+        # If service_role key is not configured, attempt calling the Postgres RPC delete_user
+        rpc_endpoint = f"{supabase_url.rstrip('/')}/rest/v1/rpc/delete_user"
+        rpc_headers = {
+            "apikey": anon_key,
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        try:
+            rpc_res = requests.post(rpc_endpoint, headers=rpc_headers, json={}, timeout=10)
+            if rpc_res.status_code in (200, 204):
+                logger.info(f"Successfully deleted user {user_id} via delete_user RPC.")
+            else:
+                logger.error(f"delete_user RPC returned status {rpc_res.status_code}: {rpc_res.text}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="SUPABASE_SERVICE_ROLE_KEY is not configured in backend and delete_user() SQL function is not installed in Supabase."
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error(f"Error calling delete_user RPC from backend: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete user account: {exc}"
+            )
+
+    return {
+        "success": True,
+        "message": "Account and associated data deleted successfully.",
+        "user_id": user_id
     }

@@ -4,43 +4,123 @@ import { useAuth } from "../context/AuthContext";
 function SignupPage({ onSignupSuccess, onGoToLogin }) {
   const { signUp } = useAuth();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [formData, setFormData] = useState({
+    fullName: "",
+    email: "",
+    city: "",
+    area: "",
+    password: "",
+    confirmPassword: "",
+  });
+
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccessMsg("");
 
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
+    const nameTrimmed = formData.fullName.trim();
+    const emailTrimmed = formData.email.trim();
+    const cityTrimmed = formData.city.trim();
+    const areaTrimmed = formData.area.trim();
+
+    if (!nameTrimmed) {
+      setError("Please enter your Full Name.");
       return;
     }
 
-    if (password.length < 6) {
+    if (!emailTrimmed) {
+      setError("Please enter your Email Address.");
+      return;
+    }
+
+    if (!cityTrimmed) {
+      setError("Please enter your City.");
+      return;
+    }
+
+    if (!areaTrimmed) {
+      setError("Please enter your Area.");
+      return;
+    }
+
+    if (!formData.password) {
+      setError("Please enter a Password.");
+      return;
+    }
+
+    if (formData.password.length < 6) {
       setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    if (!formData.confirmPassword) {
+      setError("Please confirm your Password.");
+      return;
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match.");
       return;
     }
 
     setLoading(true);
 
-    const { error: signUpError } = await signUp(email, password);
+    const metadata = {
+      full_name: nameTrimmed,
+      city: cityTrimmed,
+      area: areaTrimmed,
+    };
+
+    const { error: signUpError } = await signUp(
+      emailTrimmed,
+      formData.password,
+      metadata
+    );
 
     setLoading(false);
 
     if (signUpError) {
-      setError(signUpError.message || "Could not create account. Please try again.");
+      const rawMsg = (signUpError.message || "").toLowerCase();
+      const status = signUpError.status;
+
+      if (
+        rawMsg.includes("duplicate") ||
+        rawMsg.includes("unique") ||
+        rawMsg.includes("power_plants")
+      ) {
+        setError(
+          "An account is already registered with this location. Please use a different location."
+        );
+      } else if (
+        status === 429 ||
+        rawMsg.includes("rate limit") ||
+        rawMsg.includes("too many") ||
+        rawMsg.includes("security purposes")
+      ) {
+        setError(
+          "Too many signup attempts. Please wait a few minutes before trying again."
+        );
+      } else {
+        setError(
+          "Could not create account. Please check your details and try again."
+        );
+      }
     } else {
-      // Supabase may send a confirmation email depending on project settings.
-      // Show a success message; if email confirmation is disabled, redirect directly.
       setSuccessMsg(
         "Account created! Check your email to confirm, then sign in."
       );
-      // Give the user a moment to read the message, then go to login.
       setTimeout(() => onSignupSuccess(), 2500);
     }
   };
@@ -64,42 +144,96 @@ function SignupPage({ onSignupSuccess, onGoToLogin }) {
         <p className="auth-subtitle">Start forecasting solar &amp; grid load today</p>
 
         <form onSubmit={handleSubmit} className="auth-form" noValidate>
+          {/* 1. Full Name */}
           <div className="input-group">
-            <label htmlFor="signup-email">Email address</label>
+            <label htmlFor="signup-name">Full Name</label>
+            <input
+              id="signup-name"
+              type="text"
+              name="fullName"
+              placeholder="e.g. Amrutha S"
+              value={formData.fullName}
+              onChange={handleChange}
+              required
+              autoComplete="name"
+              disabled={loading}
+            />
+          </div>
+
+          {/* 2. Email Address */}
+          <div className="input-group">
+            <label htmlFor="signup-email">Email Address</label>
             <input
               id="signup-email"
               type="email"
+              name="email"
               placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={formData.email}
+              onChange={handleChange}
               required
               autoComplete="email"
               disabled={loading}
             />
           </div>
 
+          {/* 3. City */}
+          <div className="input-group">
+            <label htmlFor="signup-city">City</label>
+            <input
+              id="signup-city"
+              type="text"
+              name="city"
+              placeholder="e.g. Vijayawada"
+              value={formData.city}
+              onChange={handleChange}
+              required
+              autoComplete="address-level2"
+              disabled={loading}
+            />
+          </div>
+
+          {/* 4. Area */}
+          <div className="input-group">
+            <label htmlFor="signup-area">Area</label>
+            <input
+              id="signup-area"
+              type="text"
+              name="area"
+              placeholder="e.g. 1 Town"
+              value={formData.area}
+              onChange={handleChange}
+              required
+              autoComplete="address-level3"
+              disabled={loading}
+            />
+          </div>
+
+          {/* 5. Password */}
           <div className="input-group">
             <label htmlFor="signup-password">Password</label>
             <input
               id="signup-password"
               type="password"
+              name="password"
               placeholder="At least 6 characters"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={formData.password}
+              onChange={handleChange}
               required
               autoComplete="new-password"
               disabled={loading}
             />
           </div>
 
+          {/* 6. Confirm Password */}
           <div className="input-group">
-            <label htmlFor="signup-confirm-password">Confirm password</label>
+            <label htmlFor="signup-confirm-password">Confirm Password</label>
             <input
               id="signup-confirm-password"
               type="password"
+              name="confirmPassword"
               placeholder="Repeat your password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
+              value={formData.confirmPassword}
+              onChange={handleChange}
               required
               autoComplete="new-password"
               disabled={loading}
@@ -118,6 +252,7 @@ function SignupPage({ onSignupSuccess, onGoToLogin }) {
             </p>
           )}
 
+          {/* 7. Create Account Button */}
           <button
             id="signup-submit-btn"
             type="submit"

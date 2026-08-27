@@ -6,6 +6,8 @@ import Dashboard from "./components/Dashboard";
 import InputForm from "./components/InputForm";
 import GridPrediction from "./components/GridPrediction";
 import PredictionHistory from "./components/PredictionHistory";
+import DetailsPage from "./components/DetailsPage";
+import HamburgerMenu from "./components/HamburgerMenu";
 import LoginPage from "./components/LoginPage";
 import SignupPage from "./components/SignupPage";
 
@@ -15,7 +17,7 @@ function AppInner() {
   const { user, loading, signOut } = useAuth();
 
   // "auth" pages: "login" | "signup"
-  // App pages: "cover" | "home" | "dashboard" | "solar" | "grid" | "history"
+  // App pages: "cover" | "home" | "dashboard" | "solar" | "grid" | "history" | "details"
   const [currentPage, setCurrentPage] = useState("cover");
   const [authPage, setAuthPage] = useState("login"); // which auth screen to show
   const [solarPower, setSolarPower] = useState(null);
@@ -56,6 +58,11 @@ function AppInner() {
     navigateTo("cover");
   };
 
+  const handleDeleteSuccess = () => {
+    setAuthPage("login");
+    navigateTo("login");
+  };
+
   // ── Loading state ─────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -80,7 +87,7 @@ function AppInner() {
 
   // ── Protected route guard ─────────────────────────────────────────────────
   // Pages that require authentication
-  const protectedPages = ["dashboard", "solar", "grid", "history"];
+  const protectedPages = ["dashboard", "solar", "grid", "history", "details"];
   if (!user && protectedPages.includes(currentPage)) {
     // Redirect to login if trying to access a protected page without auth
     return authPage === "signup" ? (
@@ -128,53 +135,69 @@ function AppInner() {
     );
   }
 
-  // ── Authenticated pages ───────────────────────────────────────────────────
-  if (currentPage === "dashboard") {
-    return (
-      <Dashboard
-        onSolarSelect={() => navigateTo("solar")}
-        onHistorySelect={() => navigateTo("history")}
-        onLogout={handleLogout}
-      />
-    );
-  }
-
-  if (currentPage === "history") {
-    return (
-      <PredictionHistory
-        onBackToDashboard={() => navigateTo("dashboard")}
-      />
-    );
-  }
-
-  if (currentPage === "solar") {
-    return (
-      <div className="dashboard">
-        <header>
-          <h2>☀️ Solar Power Prediction</h2>
-          <p>Predict solar AC power using environmental conditions.</p>
-        </header>
-
-        <InputForm
-          onSolarPrediction={(power) => {
-            setSolarPower(power);
-            navigateTo("grid");
-          }}
-        />
-      </div>
-    );
-  }
-
-  // currentPage === "grid"
+  // ── Authenticated pages (with Hamburger Menu) ─────────────────────────────
   return (
-    <div className="dashboard">
-      <header>
-        <h2>⚡ Grid Load Prediction</h2>
-        <p>Compare solar generation with your power consumption.</p>
-      </header>
+    <>
+      {/* Top-Left Hamburger Navigation Drawer (authenticated only) */}
+      <HamburgerMenu
+        currentPage={currentPage}
+        onNavigateTo={navigateTo}
+        onLogout={handleLogout}
+        onDeleteSuccess={handleDeleteSuccess}
+      />
 
-      <GridPrediction solarPower={solarPower} />
-    </div>
+      {/* Page Views */}
+      {currentPage === "dashboard" && (
+        <Dashboard
+          onSolarSelect={() => navigateTo("solar")}
+          onHistorySelect={() => navigateTo("history")}
+          onLogout={handleLogout}
+        />
+      )}
+
+      {currentPage === "history" && (
+        <PredictionHistory
+          onBackToDashboard={() => navigateTo("dashboard")}
+        />
+      )}
+
+      {currentPage === "details" && (
+        <DetailsPage
+          onBackToDashboard={() => navigateTo("dashboard")}
+          onNavigateTo={navigateTo}
+        />
+      )}
+
+      {currentPage === "solar" && (
+        <div className="dashboard">
+          <header>
+            <h2>☀️ Solar Power Prediction</h2>
+            <p>Predict solar AC power using environmental conditions.</p>
+          </header>
+
+          <InputForm
+            onSolarPrediction={(power) => {
+              setSolarPower(power);
+              navigateTo("grid");
+            }}
+          />
+        </div>
+      )}
+
+      {currentPage === "grid" && (
+        <div className="dashboard">
+          <header>
+            <h2>⚡ Grid Load Prediction</h2>
+            <p>Compare solar generation with your power consumption.</p>
+          </header>
+
+          <GridPrediction
+            solarPower={solarPower}
+            onGoToSolar={() => navigateTo("solar")}
+          />
+        </div>
+      )}
+    </>
   );
 }
 

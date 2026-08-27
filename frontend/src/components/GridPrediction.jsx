@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 
-function GridPrediction({ solarPower }) {
+function GridPrediction({ solarPower, onGoToSolar }) {
   const { user } = useAuth();
 
   const [consumption, setConsumption] = useState("");
@@ -10,6 +10,8 @@ function GridPrediction({ solarPower }) {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const hasSolar = Number.isFinite(Number(solarPower)) && Number(solarPower) > 0;
 
   const handlePredict = async (event) => {
     event.preventDefault();
@@ -94,6 +96,29 @@ function GridPrediction({ solarPower }) {
 
   const roundValue = (val) => Math.round(val * 100) / 100;
 
+  // If no solar prediction was made in current session, prompt user to predict solar power first
+  if (!hasSolar) {
+    return (
+      <div className="form-card empty-solar-state-card">
+        <div className="empty-state-icon">☀️</div>
+        <h3>Please generate a Solar Power Prediction first.</h3>
+        <p>
+          Grid Load Prediction requires the estimated solar AC power output to calculate your net power and energy balance.
+        </p>
+        {onGoToSolar && (
+          <button
+            type="button"
+            className="predict-button"
+            style={{ maxWidth: "280px", margin: "20px auto 0" }}
+            onClick={onGoToSolar}
+          >
+            Go to Solar Prediction →
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="form-card">
 
@@ -101,25 +126,23 @@ function GridPrediction({ solarPower }) {
 
         <div className="input-grid">
 
-          {/* SOLAR POWER */}
-
+          {/* SOLAR POWER (Auto-received & Read-Only) */}
           <div className="input-group">
             <label>Solar AC Power Generated</label>
 
             <input
-              type="number"
-              value={solarPower || ""}
+              type="text"
+              value={`${Number(solarPower).toLocaleString("en-IN", { maximumFractionDigits: 2 })} kW`}
               readOnly
+              className="readonly-input"
             />
 
-            <small>
-              Automatically received from Solar Prediction
+            <small className="auto-received-badge">
+              Automatically received from Solar Prediction ✓
             </small>
           </div>
 
-
           {/* CONSUMPTION */}
-
           <div className="input-group">
             <label>Current Power Consumption</label>
 

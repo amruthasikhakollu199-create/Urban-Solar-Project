@@ -1,79 +1,138 @@
+import React from "react";
+
 function Dashboard({ onSolarSelect, onHistorySelect, onLogout }) {
   return (
-    <div className="dashboard">
+    <div className="dashboard overview-dashboard">
 
-      {/* Topbar with Logout and History links */}
-      <div className="dashboard-topbar">
-        {onHistorySelect && (
-          <button
-            id="nav-history-btn"
-            className="history-nav-button"
-            onClick={onHistorySelect}
-            type="button"
-          >
-            📜 Prediction History
-          </button>
-        )}
-
-        {onLogout && (
-          <button
-            id="logout-btn"
-            className="logout-button"
-            onClick={onLogout}
-            type="button"
-          >
-            Sign Out
-          </button>
-        )}
-      </div>
-
-      <header>
+      <header className="dashboard-header-clean">
+        <div className="dashboard-badge">⚡ Intelligent Energy Management</div>
         <h2>Urban Solar &amp; Grid Load Forecasting</h2>
-
-        <p>
-          Choose what you want to predict or view your history.
-        </p>
       </header>
 
-      <div className="prediction-options">
+      {/* 4-STEP CONNECTED WORKFLOW */}
+      <section className="workflow-section">
+        <div className="section-title-wrap">
+          <span className="section-subtitle">Process Overview</span>
+          <h3>How Our Energy Forecasting Works</h3>
+        </div>
 
-        {/* SOLAR POWER CARD */}
-        <button
-          className="prediction-card solar-card"
-          onClick={onSolarSelect}
-        >
-          <div className="card-icon">☀️</div>
+        <div className="workflow-timeline">
+          {/* STEP 1 */}
+          <div className="workflow-step">
+            <div className="step-badge">1</div>
+            <div className="step-card">
+              <div className="step-icon">☀️</div>
+              <h4>Input Environmental Data</h4>
+              <p>
+                Enter environmental conditions such as temperature, humidity, cloud cover, shortwave radiation, zenith, and angle of incidence.
+              </p>
+            </div>
+          </div>
 
-          <h3>Solar Power Prediction</h3>
+          {/* CONNECTOR 1 -> 2 */}
+          <div className="workflow-connector" aria-hidden="true">
+            <span className="connector-line"></span>
+            <span className="connector-arrow">→</span>
+            <span className="connector-arrow-mobile">↓</span>
+          </div>
 
-          <p>
-            Predict solar AC power using environmental
-            conditions.
-          </p>
+          {/* STEP 2 */}
+          <div className="workflow-step">
+            <div className="step-badge">2</div>
+            <div className="step-card">
+              <div className="step-icon">🌞</div>
+              <h4>Predict Solar Power</h4>
+              <p>
+                Our machine learning model predicts the solar AC power that the power plant can generate.
+              </p>
+            </div>
+          </div>
 
-          <span>Predict Solar Power →</span>
-        </button>
+          {/* CONNECTOR 2 -> 3 */}
+          <div className="workflow-connector" aria-hidden="true">
+            <span className="connector-line"></span>
+            <span className="connector-arrow">→</span>
+            <span className="connector-arrow-mobile">↓</span>
+          </div>
 
-        {/* PREDICTION HISTORY CARD */}
-        {onHistorySelect && (
-          <button
-            className="prediction-card history-card"
-            onClick={onHistorySelect}
-          >
-            <div className="card-icon">📜</div>
+          {/* STEP 3 */}
+          <div className="workflow-step">
+            <div className="step-badge">3</div>
+            <div className="step-card">
+              <div className="step-icon">⚡</div>
+              <h4>Compare Generation with Grid Demand</h4>
+              <p>
+                The predicted solar generation is automatically passed to Grid Load Prediction and compared with current power consumption.
+              </p>
+            </div>
+          </div>
 
-            <h3>Prediction History</h3>
+          {/* CONNECTOR 3 -> 4 */}
+          <div className="workflow-connector" aria-hidden="true">
+            <span className="connector-line"></span>
+            <span className="connector-arrow">→</span>
+            <span className="connector-arrow-mobile">↓</span>
+          </div>
 
-            <p>
-              View your saved solar and grid prediction history
-              from the last 7 days.
-            </p>
+          {/* STEP 4 */}
+          <div className="workflow-step">
+            <div className="step-badge">4</div>
+            <div className="step-card">
+              <div className="step-icon">📊</div>
+              <h4>Analyze Power Balance</h4>
+              <p>
+                The system calculates whether the plant has surplus generation or requires additional power for the selected forecast period.
+              </p>
+            </div>
+          </div>
+        </div>
 
-            <span>View History →</span>
-          </button>
+        {/* START FORECASTING CTA */}
+        {onSolarSelect && (
+          <div className="workflow-action">
+            <button
+              type="button"
+              className="predict-button start-flow-btn"
+              onClick={onSolarSelect}
+            >
+              Start Solar Power Prediction →
+            </button>
+          </div>
         )}
+      </section>
 
-      </div>
+      {/* WHY THIS MATTERS SECTION */}
+      <section className="matters-section">
+        <div className="section-title-wrap">
+          <h3>Why This Matters?</h3>
+          <p className="matters-intro">
+            By combining solar generation forecasting with grid demand analysis, the system helps identify power shortages and surplus generation before they become operational problems.
+          </p>
+        </div>
+
+        <div className="benefits-grid">
+          {/* Benefit 1 */}
+          <div className="benefit-card">
+            <div className="benefit-icon">☀️</div>
+            <h4>Better Solar Utilization</h4>
+            <p>Use predicted generation more effectively.</p>
+          </div>
+
+          {/* Benefit 2 */}
+          <div className="benefit-card">
+            <div className="benefit-icon">⚡</div>
+            <h4>Demand Awareness</h4>
+            <p>Understand whether current generation can meet consumption.</p>
+          </div>
+
+          {/* Benefit 3 */}
+          <div className="benefit-card">
+            <div className="benefit-icon">🌱</div>
+            <h4>Smarter Energy Planning</h4>
+            <p>Support better decisions for efficient and sustainable power management.</p>
+          </div>
+        </div>
+      </section>
 
     </div>
   );
