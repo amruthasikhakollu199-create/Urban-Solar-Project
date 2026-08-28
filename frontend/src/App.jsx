@@ -8,6 +8,7 @@ import GridPrediction from "./components/GridPrediction";
 import PredictionHistory from "./components/PredictionHistory";
 import DetailsPage from "./components/DetailsPage";
 import HamburgerMenu from "./components/HamburgerMenu";
+import NotificationPanel from "./components/NotificationPanel";
 import LoginPage from "./components/LoginPage";
 import SignupPage from "./components/SignupPage";
 
@@ -21,6 +22,7 @@ function AppInner() {
   const [currentPage, setCurrentPage] = useState("cover");
   const [authPage, setAuthPage] = useState("login"); // which auth screen to show
   const [solarPower, setSolarPower] = useState(null);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
 
   // ── Browser history (existing logic, untouched) ──────────────────────────
   useEffect(() => {
@@ -135,7 +137,7 @@ function AppInner() {
     );
   }
 
-  // ── Authenticated pages (with Hamburger Menu) ─────────────────────────────
+  // ── Authenticated pages (with Hamburger Menu & Notifications) ─────────────
   return (
     <>
       {/* Top-Left Hamburger Navigation Drawer (authenticated only) */}
@@ -144,6 +146,14 @@ function AppInner() {
         onNavigateTo={navigateTo}
         onLogout={handleLogout}
         onDeleteSuccess={handleDeleteSuccess}
+        onOpenNotifications={() => setIsNotifOpen(true)}
+      />
+
+      {/* Top-Right Energy Notification Indicator & Dropdown Panel */}
+      <NotificationPanel
+        isOpen={isNotifOpen}
+        onToggle={() => setIsNotifOpen(!isNotifOpen)}
+        onClose={() => setIsNotifOpen(false)}
       />
 
       {/* Page Views */}

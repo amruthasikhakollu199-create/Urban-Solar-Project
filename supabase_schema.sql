@@ -108,10 +108,48 @@ CREATE POLICY "Users can delete their own power plants"
     USING (auth.uid() = user_id);
 
 -- ============================================================
--- 8. Secure RPC Function for Account Deletion (Self-deletion)
+-- 8. Create energy_notifications table & RLS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS public.energy_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_plant_id UUID NOT NULL REFERENCES public.power_plants(id) ON DELETE CASCADE,
+    target_plant_id UUID NOT NULL REFERENCES public.power_plants(id) ON DELETE CASCADE,
+    surplus_energy_kw NUMERIC NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Enable RLS on energy_notifications
+ALTER TABLE public.energy_notifications ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for energy_notifications
+DROP POLICY IF EXISTS "Users can view notifications for their target plant" ON public.energy_notifications;
+CREATE POLICY "Users can view notifications for their target plant"
+    ON public.energy_notifications FOR SELECT
+    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+
+DROP POLICY IF EXISTS "Authenticated users can insert notifications" ON public.energy_notifications;
+CREATE POLICY "Authenticated users can insert notifications"
+    ON public.energy_notifications FOR INSERT
+    WITH CHECK (auth.uid() IS NOT NULL);
+
+DROP POLICY IF EXISTS "Users can update notifications for their target plant" ON public.energy_notifications;
+CREATE POLICY "Users can update notifications for their target plant"
+    ON public.energy_notifications FOR UPDATE
+    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+
+DROP POLICY IF EXISTS "Users can delete notifications for their target plant" ON public.energy_notifications;
+CREATE POLICY "Users can delete notifications for their target plant"
+    ON public.energy_notifications FOR DELETE
+    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+
+-- ============================================================
+-- 9. Secure RPC Function for Account Deletion (Self-deletion)
 -- ============================================================
 -- Allows authenticated users to permanently delete their own account from auth.users.
--- All related rows in power_plants, solar_predictions, and grid_predictions
+-- All related rows in power_plants, solar_predictions, grid_predictions, and energy_notifications
 -- are automatically removed via ON DELETE CASCADE.
 
 CREATE OR REPLACE FUNCTION public.delete_user()
@@ -133,4 +171,5 @@ $$;
 
 -- Grant execution permission to authenticated users
 GRANT EXECUTE ON FUNCTION public.delete_user() TO authenticated;
+
 

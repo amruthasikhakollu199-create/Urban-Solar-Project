@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabaseClient";
 
-function HamburgerMenu({ currentPage, onNavigateTo, onLogout, onDeleteSuccess }) {
+function HamburgerMenu({ currentPage, onNavigateTo, onLogout, onDeleteSuccess, onOpenNotifications }) {
   const { user, signOut } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -247,6 +247,21 @@ function HamburgerMenu({ currentPage, onNavigateTo, onLogout, onDeleteSuccess })
               >
                 <span className="menu-item-icon">📜</span>
                 <span className="menu-item-text">Prediction History</span>
+              </button>
+            </li>
+
+            {/* 3. Energy Surplus Notifications */}
+            <li>
+              <button
+                type="button"
+                className="drawer-menu-item"
+                onClick={() => {
+                  setIsOpen(false);
+                  if (onOpenNotifications) onOpenNotifications();
+                }}
+              >
+                <span className="menu-item-icon">🔔</span>
+                <span className="menu-item-text">Energy Notifications</span>
               </button>
             </li>
 

@@ -44,12 +44,12 @@ app.add_middleware(
 
 
 # ============================================================
-# SUPABASE HELPER
+# SUPABASE HELPERS
 # ============================================================
 
 def save_to_supabase(table_name: str, payload: dict, auth_header: Optional[str] = None):
     """
-    Saves prediction record to Supabase table via PostgREST API.
+    Saves prediction or notification record to Supabase table via PostgREST API.
     If database saving fails, logs the error clearly and returns None,
     ensuring the API endpoint never crashes or hides the prediction result.
     """
@@ -81,7 +81,7 @@ def save_to_supabase(table_name: str, payload: dict, auth_header: Optional[str] 
     try:
         res = requests.post(endpoint, json=payload, headers=headers, timeout=10)
         if res.status_code in (200, 201):
-            logger.info(f"Successfully saved prediction record to '{table_name}' table in Supabase.")
+            logger.info(f"Successfully saved record to '{table_name}' table in Supabase.")
             return res.json()
         else:
             logger.error(f"Failed to save to Supabase '{table_name}': HTTP {res.status_code} - {res.text}")
@@ -89,6 +89,205 @@ def save_to_supabase(table_name: str, payload: dict, auth_header: Optional[str] 
         logger.error(f"Exception encountered while saving to Supabase '{table_name}': {exc}")
 
     return None
+
+
+def fetch_from_supabase(table_name: str, params: Optional[dict] = None, auth_header: Optional[str] = None):
+    """
+    Fetches records from Supabase table via PostgREST API.
+    """
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("VITE_SUPABASE_ANON_KEY")
+    )
+
+    if not supabase_url or not supabase_key:
+        logger.warning(f"Supabase URL or Key not set. Skipping DB fetch for table '{table_name}'.")
+        return []
+
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table_name}"
+
+    token = auth_header if auth_header else f"Bearer {supabase_key}"
+    if auth_header and not auth_header.startswith("Bearer "):
+        token = f"Bearer {auth_header}"
+
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": token,
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.get(endpoint, params=params or {}, headers=headers, timeout=10)
+        if res.status_code == 200:
+            return res.json()
+        else:
+            logger.debug(f"Fetch from Supabase '{table_name}' returned status {res.status_code}: {res.text}")
+    except Exception as exc:
+        logger.error(f"Exception encountered while fetching from Supabase '{table_name}': {exc}")
+
+    return []
+
+
+def update_in_supabase(table_name: str, match_params: dict, payload: dict, auth_header: Optional[str] = None):
+    """
+    Updates records in Supabase table via PostgREST API.
+    """
+    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("VITE_SUPABASE_ANON_KEY")
+    )
+
+    if not supabase_url or not supabase_key:
+        return None
+
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/{table_name}"
+
+    token = auth_header if auth_header else f"Bearer {supabase_key}"
+    if auth_header and not auth_header.startswith("Bearer "):
+        token = f"Bearer {auth_header}"
+
+    headers = {
+        "apikey": supabase_key,
+        "Authorization": token,
+        "Content-Type": "application/json",
+        "Prefer": "return=representation"
+    }
+
+    try:
+        res = requests.patch(endpoint, params=match_params, json=payload, headers=headers, timeout=10)
+        if res.status_code in (200, 204):
+            return res.json() if res.text else {"success": True}
+        else:
+            logger.error(f"Failed to update Supabase '{table_name}': HTTP {res.status_code} - {res.text}")
+    except Exception as exc:
+        logger.error(f"Exception while updating Supabase '{table_name}': {exc}")
+
+    return None
+
+
+def process_energy_surplus_notifications(user_id: str, power_balance: float, auth_header: Optional[str] = None):
+    """
+    Processes surplus/deficit energy matching and creates notifications in public.energy_notifications.
+
+    Rules:
+    - power_balance > 0 -> SURPLUS
+    - power_balance < 0 -> DEFICIT
+    - power_balance = 0 -> BALANCED
+
+    When a plant has surplus energy, identify other registered plants that have a deficit
+    and create an energy notification for the target plant.
+    When a plant has deficit energy, check if other registered plants have surplus energy
+    and notify this plant.
+    """
+    if not user_id:
+        return
+
+    # 1. Identify current user's power plant
+    current_plants = fetch_from_supabase("power_plants", {"user_id": f"eq.{user_id}", "select": "*"}, auth_header)
+    if not current_plants:
+        logger.info(f"No registered power plant found in DB for user {user_id}. Skipping notification matching.")
+        return
+
+    current_plant = current_plants[0]
+    current_plant_id = current_plant["id"]
+    current_city = current_plant.get("city", "").strip()
+    current_area = current_plant.get("area", "").strip()
+    current_loc = f"{current_city} - {current_area}" if (current_city and current_area) else (current_city or current_area or "Solar Plant")
+
+    # 2. Case A: Current plant has SURPLUS (power_balance > 0)
+    if power_balance > 0:
+        # Find other registered plants
+        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, auth_header)
+        for target_plant in other_plants:
+            target_user_id = target_plant.get("user_id")
+            if not target_user_id:
+                continue
+
+            # Check target plant's latest grid prediction
+            latest_preds = fetch_from_supabase(
+                "grid_predictions",
+                {"user_id": f"eq.{target_user_id}", "order": "created_at.desc", "limit": 1, "select": "power_balance"},
+                auth_header
+            )
+            if latest_preds and len(latest_preds) > 0:
+                target_balance = float(latest_preds[0].get("power_balance", 0))
+                # If target plant has a DEFICIT (power_balance < 0)
+                if target_balance < 0:
+                    # Check if an unread notification from current plant to target plant already exists
+                    existing = fetch_from_supabase(
+                        "energy_notifications",
+                        {
+                            "source_plant_id": f"eq.{current_plant_id}",
+                            "target_plant_id": f"eq.{target_plant['id']}",
+                            "is_read": "eq.false",
+                            "select": "id"
+                        },
+                        auth_header
+                    )
+                    if not existing:
+                        surplus_val = int(power_balance) if float(power_balance).is_integer() else power_balance
+                        msg = f"{surplus_val} kW of surplus energy is available from {current_loc}."
+                        notif_payload = {
+                            "source_plant_id": current_plant_id,
+                            "target_plant_id": target_plant["id"],
+                            "surplus_energy_kw": power_balance,
+                            "message": msg,
+                            "is_read": False
+                        }
+                        save_to_supabase("energy_notifications", notif_payload, auth_header)
+                        logger.info(f"Created surplus energy notification for target plant {target_plant['id']} from source {current_plant_id}")
+
+    # 3. Case B: Current plant has DEFICIT (power_balance < 0)
+    elif power_balance < 0:
+        # Find other registered plants with latest SURPLUS
+        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, auth_header)
+        for source_plant in other_plants:
+            source_user_id = source_plant.get("user_id")
+            if not source_user_id:
+                continue
+
+            latest_preds = fetch_from_supabase(
+                "grid_predictions",
+                {"user_id": f"eq.{source_user_id}", "order": "created_at.desc", "limit": 1, "select": "power_balance"},
+                auth_header
+            )
+            if latest_preds and len(latest_preds) > 0:
+                source_balance = float(latest_preds[0].get("power_balance", 0))
+                # If other plant has SURPLUS (power_balance > 0)
+                if source_balance > 0:
+                    # Check if an unread notification from other plant to current plant already exists
+                    existing = fetch_from_supabase(
+                        "energy_notifications",
+                        {
+                            "source_plant_id": f"eq.{source_plant['id']}",
+                            "target_plant_id": f"eq.{current_plant_id}",
+                            "is_read": "eq.false",
+                            "select": "id"
+                        },
+                        auth_header
+                    )
+                    if not existing:
+                        surplus_val = int(source_balance) if float(source_balance).is_integer() else source_balance
+                        source_city = source_plant.get("city", "").strip()
+                        source_area = source_plant.get("area", "").strip()
+                        source_loc = f"{source_city} - {source_area}" if (source_city and source_area) else (source_city or source_area or "Solar Plant")
+                        msg = f"{surplus_val} kW of surplus energy is available from {source_loc}."
+                        notif_payload = {
+                            "source_plant_id": source_plant["id"],
+                            "target_plant_id": current_plant_id,
+                            "surplus_energy_kw": source_balance,
+                            "message": msg,
+                            "is_read": False
+                        }
+                        save_to_supabase("energy_notifications", notif_payload, auth_header)
+                        logger.info(f"Created surplus energy notification for current plant {current_plant_id} from source {source_plant['id']}")
+
 
 
 # ============================================================
@@ -284,6 +483,12 @@ def predict_grid(data: GridPredictionRequest, authorization: Optional[str] = Hea
         }
         save_to_supabase("grid_predictions", db_payload, authorization)
 
+        # Process energy notifications for surplus / deficit matching
+        try:
+            process_energy_surplus_notifications(data.user_id, power_balance, authorization)
+        except Exception as notif_exc:
+            logger.error(f"Error while processing energy notifications in predict_grid: {notif_exc}")
+
     return {
         "solar": solar,
         "consumed": consumed,
@@ -291,6 +496,91 @@ def predict_grid(data: GridPredictionRequest, authorization: Optional[str] = Hea
         "powerBalance": power_balance,
         "energyBalance": energy_balance
     }
+
+
+# ============================================================
+# ENERGY NOTIFICATIONS ENDPOINTS
+# ============================================================
+
+@app.get("/notifications")
+def get_notifications(
+    user_id: Optional[str] = None,
+    target_plant_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Fetches energy notifications for the target plant / logged-in user.
+    """
+    plant_id = target_plant_id
+
+    # If user_id is passed, find user's power plant id first
+    if not plant_id and user_id:
+        plants = fetch_from_supabase("power_plants", {"user_id": f"eq.{user_id}", "select": "id"}, authorization)
+        if plants:
+            plant_id = plants[0].get("id")
+
+    if not plant_id:
+        return {"notifications": [], "unread_count": 0}
+
+    # Fetch notifications intended for this target plant
+    notifs = fetch_from_supabase(
+        "energy_notifications",
+        {
+            "target_plant_id": f"eq.{plant_id}",
+            "order": "created_at.desc",
+            "select": "*"
+        },
+        authorization
+    )
+
+    unread_count = sum(1 for n in notifs if not n.get("is_read", False))
+
+    return {
+        "notifications": notifs,
+        "unread_count": unread_count
+    }
+
+
+@app.patch("/notifications/{notification_id}/read")
+@app.post("/notifications/{notification_id}/read")
+def mark_notification_read(notification_id: str, authorization: Optional[str] = Header(None)):
+    """
+    Marks a single notification as read.
+    """
+    result = update_in_supabase(
+        "energy_notifications",
+        {"id": f"eq.{notification_id}"},
+        {"is_read": True},
+        authorization
+    )
+    return {"success": True, "result": result}
+
+
+@app.post("/notifications/mark-all-read")
+def mark_all_notifications_read(
+    target_plant_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Marks all notifications for a target plant as read.
+    """
+    plant_id = target_plant_id
+    if not plant_id and user_id:
+        plants = fetch_from_supabase("power_plants", {"user_id": f"eq.{user_id}", "select": "id"}, authorization)
+        if plants:
+            plant_id = plants[0].get("id")
+
+    if not plant_id:
+        return {"success": False, "message": "Power plant not found."}
+
+    result = update_in_supabase(
+        "energy_notifications",
+        {"target_plant_id": f"eq.{plant_id}", "is_read": "eq.false"},
+        {"is_read": True},
+        authorization
+    )
+    return {"success": True, "result": result}
 
 
 # ============================================================
