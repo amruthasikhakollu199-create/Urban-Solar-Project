@@ -121,6 +121,25 @@ CREATE TABLE IF NOT EXISTS public.energy_notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Helper function to check plant ownership in an isolated SECURITY DEFINER context
+CREATE OR REPLACE FUNCTION public.is_plant_owner(check_plant_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, auth
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.power_plants
+    WHERE id = check_plant_id
+      AND user_id = auth.uid()
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_plant_owner(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_plant_owner(UUID) TO authenticated;
+
 -- Enable RLS on energy_notifications
 ALTER TABLE public.energy_notifications ENABLE ROW LEVEL SECURITY;
 
@@ -128,7 +147,8 @@ ALTER TABLE public.energy_notifications ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view notifications for their target plant" ON public.energy_notifications;
 CREATE POLICY "Users can view notifications for their target plant"
     ON public.energy_notifications FOR SELECT
-    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+    TO authenticated
+    USING (public.is_plant_owner(target_plant_id));
 
 DROP POLICY IF EXISTS "Authenticated users can insert notifications" ON public.energy_notifications;
 CREATE POLICY "Authenticated users can insert notifications"
@@ -138,12 +158,15 @@ CREATE POLICY "Authenticated users can insert notifications"
 DROP POLICY IF EXISTS "Users can update notifications for their target plant" ON public.energy_notifications;
 CREATE POLICY "Users can update notifications for their target plant"
     ON public.energy_notifications FOR UPDATE
-    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+    TO authenticated
+    USING (public.is_plant_owner(target_plant_id))
+    WITH CHECK (public.is_plant_owner(target_plant_id));
 
 DROP POLICY IF EXISTS "Users can delete notifications for their target plant" ON public.energy_notifications;
 CREATE POLICY "Users can delete notifications for their target plant"
     ON public.energy_notifications FOR DELETE
-    USING (target_plant_id IN (SELECT id FROM public.power_plants WHERE user_id = auth.uid()));
+    TO authenticated
+    USING (public.is_plant_owner(target_plant_id));
 
 -- ============================================================
 -- 9. Secure RPC Function for Account Deletion (Self-deletion)

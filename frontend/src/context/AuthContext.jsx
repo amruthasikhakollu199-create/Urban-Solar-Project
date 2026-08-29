@@ -63,15 +63,67 @@ export function AuthProvider({ children }) {
   // ============================================================
 
   const updateProfile = async (metadata = {}) => {
-    const { data, error } = await supabase.auth.updateUser({
+    const { city, area, full_name } = metadata;
+    const userId = user?.id;
+
+    // ---------------------------------------------------------------
+    // Step 1: Update public.power_plants FIRST (if city & area given)
+    // This runs before Auth so if the DB rejects the change (e.g.
+    // duplicate location), Auth metadata stays consistent with the DB.
+    // ---------------------------------------------------------------
+    if (city && area && userId) {
+      // Try updating the existing row
+      const { data: updatedRows, error: plantError } = await supabase
+        .from("power_plants")
+        .update({ city, area })
+        .eq("user_id", userId)
+        .select();
+
+      if (plantError) {
+        // Duplicate city+area (unique constraint violation)
+        if (plantError.code === "23505") {
+          return {
+            data: null,
+            error: { message: "An account is already registered with this location." },
+          };
+        }
+        return { data: null, error: plantError };
+      }
+
+      // If 0 rows matched, the user has no power_plants row yet → insert one
+      if (!updatedRows || updatedRows.length === 0) {
+        const { error: insertError } = await supabase
+          .from("power_plants")
+          .insert({ user_id: userId, city, area });
+
+        if (insertError) {
+          if (insertError.code === "23505") {
+            return {
+              data: null,
+              error: { message: "An account is already registered with this location." },
+            };
+          }
+          return { data: null, error: insertError };
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------
+    // Step 2: Update Supabase Auth metadata (full_name, city, area)
+    // ---------------------------------------------------------------
+    const { data: authData, error: authError } = await supabase.auth.updateUser({
       data: metadata,
     });
 
-    if (data?.user) {
-      setUser(data.user);
+    if (authData?.user) {
+      setUser(authData.user);
     }
 
-    return { data, error };
+    if (authError) {
+      return { data: null, error: authError };
+    }
+
+    return { data: authData, error: null };
   };
 
   // ============================================================

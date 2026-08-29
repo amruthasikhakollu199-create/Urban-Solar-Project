@@ -184,12 +184,16 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
     and create an energy notification for the target plant.
     When a plant has deficit energy, check if other registered plants have surplus energy
     and notify this plant.
+
+    NOTE: All queries in this function use service_role key (auth_header=None)
+    because they require cross-user visibility. The user's JWT would be blocked
+    by RLS when reading other users' power_plants / grid_predictions rows.
     """
     if not user_id:
         return
 
     # 1. Identify current user's power plant
-    current_plants = fetch_from_supabase("power_plants", {"user_id": f"eq.{user_id}", "select": "*"}, auth_header)
+    current_plants = fetch_from_supabase("power_plants", {"user_id": f"eq.{user_id}", "select": "*"}, None)
     if not current_plants:
         logger.info(f"No registered power plant found in DB for user {user_id}. Skipping notification matching.")
         return
@@ -203,7 +207,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
     # 2. Case A: Current plant has SURPLUS (power_balance > 0)
     if power_balance > 0:
         # Find other registered plants
-        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, auth_header)
+        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, None)
         for target_plant in other_plants:
             target_user_id = target_plant.get("user_id")
             if not target_user_id:
@@ -213,7 +217,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
             latest_preds = fetch_from_supabase(
                 "grid_predictions",
                 {"user_id": f"eq.{target_user_id}", "order": "created_at.desc", "limit": 1, "select": "power_balance"},
-                auth_header
+                None
             )
             if latest_preds and len(latest_preds) > 0:
                 target_balance = float(latest_preds[0].get("power_balance", 0))
@@ -228,7 +232,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
                             "is_read": "eq.false",
                             "select": "id"
                         },
-                        auth_header
+                        None
                     )
                     if not existing:
                         surplus_val = int(power_balance) if float(power_balance).is_integer() else power_balance
@@ -240,13 +244,13 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
                             "message": msg,
                             "is_read": False
                         }
-                        save_to_supabase("energy_notifications", notif_payload, auth_header)
+                        save_to_supabase("energy_notifications", notif_payload, None)
                         logger.info(f"Created surplus energy notification for target plant {target_plant['id']} from source {current_plant_id}")
 
     # 3. Case B: Current plant has DEFICIT (power_balance < 0)
     elif power_balance < 0:
         # Find other registered plants with latest SURPLUS
-        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, auth_header)
+        other_plants = fetch_from_supabase("power_plants", {"user_id": f"neq.{user_id}", "select": "*"}, None)
         for source_plant in other_plants:
             source_user_id = source_plant.get("user_id")
             if not source_user_id:
@@ -255,7 +259,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
             latest_preds = fetch_from_supabase(
                 "grid_predictions",
                 {"user_id": f"eq.{source_user_id}", "order": "created_at.desc", "limit": 1, "select": "power_balance"},
-                auth_header
+                None
             )
             if latest_preds and len(latest_preds) > 0:
                 source_balance = float(latest_preds[0].get("power_balance", 0))
@@ -270,7 +274,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
                             "is_read": "eq.false",
                             "select": "id"
                         },
-                        auth_header
+                        None
                     )
                     if not existing:
                         surplus_val = int(source_balance) if float(source_balance).is_integer() else source_balance
@@ -285,7 +289,7 @@ def process_energy_surplus_notifications(user_id: str, power_balance: float, aut
                             "message": msg,
                             "is_read": False
                         }
-                        save_to_supabase("energy_notifications", notif_payload, auth_header)
+                        save_to_supabase("energy_notifications", notif_payload, None)
                         logger.info(f"Created surplus energy notification for current plant {current_plant_id} from source {source_plant['id']}")
 
 
